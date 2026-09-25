@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: user-service-monitor
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: user-service          # matches Service selector in kubernetes/production/07-user-service.yaml
+  namespaceSelector:
+    matchNames:
+      - production
+  endpoints:
+    - port: http                 # requires adding `name: http` to the Service port (see patch below)
+      path: /metrics
+      interval: 15s

@@ -5,10 +5,9 @@ on:
   push:
     branches:
       - main
-  
+
   # Manual trigger for the workflow
   workflow_dispatch:
-
 
 jobs:
 
@@ -101,9 +100,8 @@ jobs:
         run: |
           pytest -v
 
-
   # =========================================================
-  # Build and Push Docker Images
+  # Build, Scan, and Push Docker Images
   # =========================================================
   build-and-push:
     name: Build and Push ${{ matrix.image }}
@@ -159,6 +157,37 @@ jobs:
             --platform linux/amd64 \
             -t ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }} \
             ./${{ matrix.service }}
+
+      # ---------------------------------------------------------
+      # 10.2D: Docker Scout security scanning gate
+      # Runs after build, before push, so a failing scan blocks
+      # a vulnerable image from ever reaching the registry.
+      # ---------------------------------------------------------
+      - name: Install Docker Scout CLI
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/docker/scout-cli/main/install.sh | sh -s --
+
+      - name: Docker Scout - CVEs (gate on fixable HIGH/CRITICAL)
+        run: |
+          docker scout cves \
+            ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }} \
+            --only-severity critical,high \
+            --only-fixed \
+            --exit-code
+
+      - name: Docker Scout - Recommendations
+        run: |
+          docker scout recommendations \
+            ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
+
+      - name: Docker Scout - Policy Evaluation
+        run: |
+          docker scout policy \
+            ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }} || true
+        # `|| true`: the "Supply chain attestations" policy will still fail
+        # without SBOM/provenance attestations (out of scope for 10.1P/10.2D).
+        # The `cves` step above remains the real hard gate on the pipeline;
+        # this step's output is kept purely as reporting evidence.
 
       - name: Push Docker image with commit SHA
         run: |

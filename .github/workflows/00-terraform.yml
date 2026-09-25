@@ -1,0 +1,80 @@
+name: 00 - Terraform Infrastructure
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'terraform/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Run terraform apply after plan (leave false for validate/plan only)"
+        type: boolean
+        default: false
+
+defaults:
+  run:
+    working-directory: terraform
+
+jobs:
+  terraform:
+    name: Terraform Validate & Plan
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+
+      # NOTE: this project currently uses LOCAL Terraform state (no `backend` block
+      # in terraform/versions.tf). That means every CI run starts from an EMPTY
+      # state file, even though the real Azure resources already exist.
+      # Running `apply` in that condition will error ("resource already exists")
+      # or try to duplicate resources. Two safe options:
+      #   (a) Keep this job as validate + plan only (default here) -- this alone
+      #       satisfies the 10.2D requirement to "demonstrate Terraform executes
+      #       successfully within the pipeline" without touching live infra.
+      #   (b) Migrate to a remote backend (azurerm storage backend using the
+      #       existing stsit722wk8572189 storage account) and run
+      #       `terraform import` once for each existing resource, then apply
+      #       safely applies only future changes.
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -var-file=terraform.tfvars -out=tfplan
+        env:
+          ARM_CLIENT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientSecret }}
+          ARM_TENANT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).tenantId }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).subscriptionId }}
+
+      # Only runs if you explicitly tick "apply" on a manual workflow_dispatch run,
+      # and only AFTER you have set up a remote backend + imported existing resources.
+      - name: Terraform Apply (manual, opt-in only)
+        if: github.event_name == 'workflow_dispatch' && inputs.apply == true
+        run: terraform apply -auto-approve tfplan
+        env:
+          ARM_CLIENT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientSecret }}
+          ARM_TENANT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).tenantId }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).subscriptionId }}

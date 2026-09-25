@@ -5,6 +5,10 @@ resource "azurerm_kubernetes_cluster" "aks" {
     dns_prefix          = var.aks_dns_prefix
     kubernetes_version  = var.kubernetes_version
 
+    oms_agent {
+        log_analytics_workspace_id = azurerm_log_analytics_workspace.monitoring.id
+    }
+
     default_node_pool {
         name       = "default"
         node_count = var.aks_node_count
