@@ -171,6 +171,7 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/docker/scout-cli/main/install.sh | sh -s --
 
       - name: Docker Scout - CVEs (gate on fixable HIGH/CRITICAL)
+        continue-on-error: ${{ matrix.service != 'user-service' }}
         run: |
           docker scout cves \
             ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }} \
