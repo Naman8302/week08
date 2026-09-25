@@ -12,6 +12,7 @@ from app.db import Base, engine
 from app.models import User, UserRole
 from app.routers import auth, users
 from app.security import hash_password
+from prometheus_fastapi_instrumentator import Instrumentator
 
 
 logging.basicConfig(
@@ -115,7 +116,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
+Instrumentator().instrument(app).expose(app)
 app.include_router(auth.router)
 app.include_router(users.router)
 
